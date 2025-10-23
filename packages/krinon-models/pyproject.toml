@@ -1,0 +1,17 @@
+[project]
+name = "krinon-models"
+version = "0.1.0"
+description = "Pydantic models for interacting with the Krinon web server."
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "pydantic>=2.12.3",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+
+[tool.uv.packages]
+krinon_models = { path = "src/krinon_models" }

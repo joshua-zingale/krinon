@@ -1,0 +1,17 @@
+[project]
+name = "krinon-server"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "AgentWombat", email = "jtzingale@gmail.com" }
+]
+requires-python = ">=3.14"
+dependencies = []
+
+[project.scripts]
+krinon-server = "krinon_server:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

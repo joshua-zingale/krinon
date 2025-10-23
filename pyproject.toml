@@ -1,0 +1,23 @@
+[project]
+name = "krinon"
+version = "0.1.0"
+description = "The parent repository for the Krinon web server and tooling."
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "krinon-cli",
+    "krinon-models",
+    "krinon-server",
+]
+
+
+[tool.uv.sources]
+krinon-server = { workspace = true }
+krinon-cli = { workspace = true }
+krinon-models = { workspace = true }
+
+
+[tool.uv.workspace]
+members = [
+    "packages/*",
+]
