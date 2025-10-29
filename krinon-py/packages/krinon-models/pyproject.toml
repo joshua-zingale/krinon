@@ -16,3 +16,6 @@ build-backend = "hatchling.build"
 
 [tool.uv.packages]
 krinon_models = { path = "src/krinon_models" }
+
+[tool.hatch.build.targets.sdist]
+include = ["/src/**/py.typed"]

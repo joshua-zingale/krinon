@@ -7,12 +7,10 @@ requires-python = ">=3.14"
 dependencies = [
     "krinon-cli",
     "krinon-models",
-    "krinon-server",
 ]
 
 
 [tool.uv.sources]
-krinon-server = { workspace = true }
 krinon-cli = { workspace = true }
 krinon-models = { workspace = true }
 

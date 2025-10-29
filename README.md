@@ -1,0 +1,1 @@
+Krinon is a reverse proxy that handles organizational authentication and permissions.
