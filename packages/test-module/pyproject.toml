@@ -1,0 +1,12 @@
+[project]
+name = "test-module"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "krinon-models",
+]
+
+[tool.uv.sources]
+krinon-models = { workspace = true }
