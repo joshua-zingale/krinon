@@ -16,9 +16,9 @@ class _JwtEncodableModel(BaseModel):
     def to_jwt(self, private_key: bytes | str) -> str:
         return jwt.encode(self.model_dump(), private_key, "RS256")
     
-class AuthenticationInformation(_JwtEncodableModel):
-    user_id: str
-    scope_id: str
+class KrinonJWT(_JwtEncodableModel):
+    user_id: t.Optional[str] = None
+    scope_id: t.Optional[str] = None
 
     
 class KrinonPublicKeyResponse(BaseModel):

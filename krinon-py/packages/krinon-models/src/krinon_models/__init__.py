@@ -1,10 +1,10 @@
 "Pydantic models for interacting with the Krinon web server."
 from .schemata import (
-    AuthenticationInformation,
+    KrinonJWT,
     KrinonHeaders
 )
 
 __all__ = [
-    "AuthenticationInformation",
+    "KrinonJWT",
     "KrinonHeaders"
 ]

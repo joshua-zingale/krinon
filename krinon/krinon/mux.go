@@ -1,8 +1,11 @@
 package krinon
 
 import (
+	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
+	"encoding/base64"
+	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"log"
@@ -11,6 +14,7 @@ import (
 	"net/url"
 
 	"github.com/golang-jwt/jwt"
+	"golang.org/x/oauth2"
 )
 
 func NewKrinonMux(opts *KrinonMuxOptions) *http.ServeMux {
@@ -21,35 +25,148 @@ func NewKrinonMux(opts *KrinonMuxOptions) *http.ServeMux {
 		return nil
 	}
 
-	mux.HandleFunc("GET /.well-known/krinon-public-key", func(w http.ResponseWriter, r *http.Request) {
-		getKrinonPublicKey(opts.PublicKey, w, r)
+	mux.HandleFunc("GET /login", func(w http.ResponseWriter, r *http.Request) {
+		login(w, r, opts.OAuthConfig)
 	})
+
+	mux.HandleFunc("GET /oauth2/callback", func(w http.ResponseWriter, r *http.Request) {
+		oauth2Callback(w, r, opts.OAuthConfig, opts.Secret)
+	})
+
+	mux.HandleFunc("GET /.well-known/krinon-public-key", func(w http.ResponseWriter, r *http.Request) {
+		getKrinonPublicKey(w, r, opts.PublicKey)
+	})
+
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		httpProxy(privateKey, w, r)
+		httpProxy(w, r, privateKey, opts.Secret)
 	})
 	return mux
 }
 
-func getKrinonPublicKey(publicKey []byte, w http.ResponseWriter, _ *http.Request) {
+func login(w http.ResponseWriter, r *http.Request, oauthConfig *oauth2.Config) {
+
+	state := generateRandomState(32)
+	url := oauthConfig.AuthCodeURL(state)
+
+	next_url := r.URL.Query().Get("next")
+	if next_url == "" {
+		next_url = "/"
+	}
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     "krinon_oauth2_state",
+		Value:    state,
+		MaxAge:   600,
+		HttpOnly: true,
+	})
+
+	http.SetCookie(w, &http.Cookie{
+		Name:   "next_url",
+		Value:  next_url,
+		MaxAge: 600,
+	})
+
+	http.Redirect(w, r, url, http.StatusFound)
+}
+
+func oauth2Callback(w http.ResponseWriter, r *http.Request, oauthConfig *oauth2.Config, secret []byte) {
+	received_state := r.FormValue("state")
+	code := r.FormValue("code")
+
+	state_in_cookie, err := r.Cookie("krinon_oauth2_state")
+	if err != nil || state_in_cookie.Value != received_state {
+		http.Error(w, "Invalid login attempt.", 400)
+		return
+	}
+
+	tok, err := oauthConfig.Exchange(r.Context(), code)
+	if err != nil {
+		log.Printf("%s", err)
+		http.Error(w, "Invalid login attempt.", 400)
+		return
+	}
+
+	client := oauthConfig.Client(r.Context(), tok)
+
+	resp, err := client.Get("https://openidconnect.googleapis.com/v1/userinfo")
+	if err != nil {
+		log.Printf("Could not fetch user info: %s", err)
+		http.Error(w, "Invalid login attempt.", 400)
+		return
+	}
+
+	var userInfo UserInformation
+	err = json.NewDecoder(resp.Body).Decode(&userInfo)
+	if err != nil {
+		log.Printf("Could not parse user info: %s", err)
+		http.Error(w, "Invalid login attempt.", 400)
+		return
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"sub":   userInfo.Sub,
+		"name":  userInfo.Name,
+		"email": userInfo.Email,
+	})
+
+	signedToken, err := token.SignedString(secret)
+	if err != nil {
+		log.Printf("Could not sign user info for jwt: %s", err)
+		http.Error(w, "Invalid login attempt.", 400)
+		return
+	}
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     "krinon_session",
+		Value:    signedToken,
+		HttpOnly: true,
+		Path:     "/",
+	})
+
+	next_url := "/"
+	if next_url_cookie, err := r.Cookie("next_url"); err == nil {
+		next_url = next_url_cookie.Value
+	}
+
+	http.Redirect(w, r, next_url, http.StatusFound)
+}
+
+func getKrinonPublicKey(w http.ResponseWriter, _ *http.Request, publicKey []byte) {
 	w.Header().Add("Content-Type", "plain/text")
 	w.Write(publicKey)
 }
 
-func httpProxy(privateKey *rsa.PrivateKey, w http.ResponseWriter, r *http.Request) {
+func httpProxy(w http.ResponseWriter, r *http.Request, privateKey *rsa.PrivateKey, secret []byte) {
 
 	targetURL := "http://127.0.0.1:5555"
 
 	url, err := url.Parse(targetURL)
 	if err != nil {
-		http.Error(w, "Internal Server Error: Invalid proxy target URL", http.StatusInternalServerError)
+		http.Error(w, "Internal Server Error: Invalid target URL", http.StatusInternalServerError)
 		log.Printf("Failed to parse proxy target URL %s: %v", targetURL, err)
 		return
 	}
 
-	token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
-		"user_id":  "bob@example.com",
-		"scope_id": "BIO101",
-	})
+	var token *jwt.Token
+	if session_jwt, err := r.Cookie("krinon_session"); err == nil {
+		claims := jwt.MapClaims{}
+		_, err := jwt.ParseWithClaims(session_jwt.Value, claims, func(t *jwt.Token) (interface{}, error) {
+			return secret, nil
+		})
+
+		if err != nil {
+			log.Printf("Failed to parse JWT")
+			http.Error(w, "Internal Server Error: Invalid target URL", http.StatusInternalServerError)
+			return
+		}
+
+		token = jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
+			"user_id":  claims["email"],
+			"scope_id": "BIO101",
+		})
+	} else {
+		token = jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{})
+	}
 
 	signedJwt, err := token.SignedString(privateKey)
 	if err != nil {
@@ -69,8 +186,10 @@ func httpProxy(privateKey *rsa.PrivateKey, w http.ResponseWriter, r *http.Reques
 }
 
 type KrinonMuxOptions struct {
-	PublicKey  []byte
-	PrivateKey []byte
+	PublicKey   []byte
+	PrivateKey  []byte
+	Secret      []byte
+	OAuthConfig *oauth2.Config
 }
 
 func parseRSAPrivateKey(key []byte) (*rsa.PrivateKey, error) {
@@ -94,4 +213,18 @@ func parseRSAPrivateKey(key []byte) (*rsa.PrivateKey, error) {
 	}
 
 	return rsaKey, nil
+}
+
+func generateRandomState(n int) string {
+	bytes := make([]byte, n)
+	if _, err := rand.Read(bytes); err != nil {
+		panic(err)
+	}
+	return base64.RawURLEncoding.EncodeToString(bytes)
+}
+
+type UserInformation struct {
+	Sub   string `json:"sub"`
+	Email string `json:"email"`
+	Name  string `json:"name"`
 }
