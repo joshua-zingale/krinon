@@ -206,6 +206,19 @@ func httpProxy(w http.ResponseWriter, r *http.Request, privateKey *rsa.PrivateKe
 	}
 	reverseProxy := httputil.ReverseProxy{
 		Rewrite: func(pr *httputil.ProxyRequest) {
+			var cookiesToKeep []*http.Cookie
+			cookies := pr.In.Cookies()
+			for _, cookie := range cookies {
+				if cookie.Name != KRINON_SESSION_COOKIE_NAME {
+					cookiesToKeep = append(cookiesToKeep, cookie)
+				}
+			}
+
+			pr.Out.Header.Del("Cookie")
+			for _, cookie := range cookiesToKeep {
+				pr.Out.AddCookie(cookie)
+			}
+
 			pr.SetURL(route.URL())
 			pr.SetXForwarded()
 			pr.Out.Header.Add("X-Krinon-JWT", signedJwt)
