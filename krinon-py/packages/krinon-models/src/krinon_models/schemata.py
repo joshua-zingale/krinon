@@ -18,8 +18,11 @@ class _JwtEncodableModel(BaseModel):
     
 class KrinonJWT(_JwtEncodableModel):
     user_id: t.Optional[str] = None
-    scope_id: t.Optional[str] = None
-
+    """The ID of the authenticated user."""
+    scope_ids: t.Optional[list[str]] = None
+    """The ancestory of the scope in which a request was made.
+    The first scope_id is the first parent and the last scope_id is the
+    scope in which the request was made."""
     
 class KrinonPublicKeyResponse(BaseModel):
     key: str

@@ -18,10 +18,18 @@ func main() {
 		os.Exit(1)
 	}
 
+	router, err := internal.NewConfigurableKrinonRouter(map[string]string{
+		"mod1": "http://localhost:5555/",
+	})
+	if err != nil {
+		panic(err)
+	}
+
 	address := fmt.Sprintf("%s:%s", args.Host, args.Port)
 	server := http.Server{
 		Addr: address,
 		Handler: krinon.NewKrinonMux(&krinon.KrinonMuxOptions{
+			Router:     router,
 			PublicKey:  args.PublicKey,
 			PrivateKey: args.PrivateKey,
 			Secret:     args.Secret,

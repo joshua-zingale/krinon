@@ -12,10 +12,23 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"time"
 
 	"github.com/golang-jwt/jwt"
 	"golang.org/x/oauth2"
 )
+
+var KRINON_SESSION_COOKIE_NAME = "krinon_session"
+
+type KrinonRoute interface {
+	URL() *url.URL
+	Scopes() []string
+}
+
+type KrinonRouter interface {
+	// Gets a target URL for a given Path
+	Route(path string) (KrinonRoute, error)
+}
 
 func NewKrinonMux(opts *KrinonMuxOptions) *http.ServeMux {
 	mux := http.NewServeMux()
@@ -28,6 +41,7 @@ func NewKrinonMux(opts *KrinonMuxOptions) *http.ServeMux {
 	mux.HandleFunc("GET /login", func(w http.ResponseWriter, r *http.Request) {
 		login(w, r, opts.OAuthConfig)
 	})
+	mux.HandleFunc("GET /logout", logout)
 
 	mux.HandleFunc("GET /oauth2/callback", func(w http.ResponseWriter, r *http.Request) {
 		oauth2Callback(w, r, opts.OAuthConfig, opts.Secret)
@@ -38,9 +52,27 @@ func NewKrinonMux(opts *KrinonMuxOptions) *http.ServeMux {
 	})
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		httpProxy(w, r, privateKey, opts.Secret)
+		httpProxy(w, r, privateKey, opts.Secret, opts.Router)
 	})
 	return mux
+}
+
+func logout(w http.ResponseWriter, r *http.Request) {
+	http.SetCookie(w, &http.Cookie{
+		Name:    KRINON_SESSION_COOKIE_NAME,
+		Value:   "",
+		Path:    "/",
+		Expires: time.Unix(0, 0),
+
+		HttpOnly: true,
+	})
+
+	next_url := "/"
+	if next_url_query := r.URL.Query().Get("next"); next_url_query != "" {
+		next_url = next_url_query
+	}
+
+	http.Redirect(w, r, next_url, http.StatusFound)
 }
 
 func login(w http.ResponseWriter, r *http.Request, oauthConfig *oauth2.Config) {
@@ -117,7 +149,7 @@ func oauth2Callback(w http.ResponseWriter, r *http.Request, oauthConfig *oauth2.
 	}
 
 	http.SetCookie(w, &http.Cookie{
-		Name:     "krinon_session",
+		Name:     KRINON_SESSION_COOKIE_NAME,
 		Value:    signedToken,
 		HttpOnly: true,
 		Path:     "/",
@@ -136,19 +168,17 @@ func getKrinonPublicKey(w http.ResponseWriter, _ *http.Request, publicKey []byte
 	w.Write(publicKey)
 }
 
-func httpProxy(w http.ResponseWriter, r *http.Request, privateKey *rsa.PrivateKey, secret []byte) {
+func httpProxy(w http.ResponseWriter, r *http.Request, privateKey *rsa.PrivateKey, secret []byte, router KrinonRouter) {
 
-	targetURL := "http://127.0.0.1:5555"
-
-	url, err := url.Parse(targetURL)
+	route, err := router.Route(r.URL.Path)
 	if err != nil {
 		http.Error(w, "Internal Server Error: Invalid target URL", http.StatusInternalServerError)
-		log.Printf("Failed to parse proxy target URL %s: %v", targetURL, err)
+		log.Printf("Failed to get proxy target URL: %v", err)
 		return
 	}
 
 	var token *jwt.Token
-	if session_jwt, err := r.Cookie("krinon_session"); err == nil {
+	if session_jwt, err := r.Cookie(KRINON_SESSION_COOKIE_NAME); err == nil {
 		claims := jwt.MapClaims{}
 		_, err := jwt.ParseWithClaims(session_jwt.Value, claims, func(t *jwt.Token) (interface{}, error) {
 			return secret, nil
@@ -161,8 +191,8 @@ func httpProxy(w http.ResponseWriter, r *http.Request, privateKey *rsa.PrivateKe
 		}
 
 		token = jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
-			"user_id":  claims["email"],
-			"scope_id": "BIO101",
+			"user_id":   claims["email"],
+			"scope_ids": route.Scopes(),
 		})
 	} else {
 		token = jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{})
@@ -176,12 +206,11 @@ func httpProxy(w http.ResponseWriter, r *http.Request, privateKey *rsa.PrivateKe
 	}
 	reverseProxy := httputil.ReverseProxy{
 		Rewrite: func(pr *httputil.ProxyRequest) {
-			pr.SetURL(url)
+			pr.SetURL(route.URL())
 			pr.SetXForwarded()
 			pr.Out.Header.Add("X-Krinon-JWT", signedJwt)
 		},
 	}
-
 	reverseProxy.ServeHTTP(w, r)
 }
 
@@ -190,6 +219,7 @@ type KrinonMuxOptions struct {
 	PrivateKey  []byte
 	Secret      []byte
 	OAuthConfig *oauth2.Config
+	Router      KrinonRouter
 }
 
 func parseRSAPrivateKey(key []byte) (*rsa.PrivateKey, error) {
