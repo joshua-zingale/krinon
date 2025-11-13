@@ -193,6 +193,7 @@ func httpProxy(w http.ResponseWriter, r *http.Request, privateKey *rsa.PrivateKe
 		token = jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
 			"user_id":   claims["email"],
 			"scope_ids": route.Scopes(),
+			"aud":       route.URL().Host + r.URL.Path,
 		})
 	} else {
 		token = jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{})
