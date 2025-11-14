@@ -13,8 +13,6 @@ class Audience(t.TypedDict):
 
 class _JwtEncodableModel(BaseModel):
 
-    aud: t.Optional[str] = None
-
     @classmethod
     def from_jwt(cls, token: str, public_key: str | bytes, audiance: Audience) -> t.Self:
 
