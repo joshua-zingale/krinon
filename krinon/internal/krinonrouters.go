@@ -13,8 +13,9 @@ type ConfigurableKrinonRouter struct {
 }
 
 type ConfiguredKrinonRoute struct {
-	uRL    *url.URL
-	scopes []string
+	uRL      *url.URL
+	scopes   []string
+	rootPath []string
 }
 
 func (r ConfiguredKrinonRoute) URL() *url.URL {
@@ -23,6 +24,10 @@ func (r ConfiguredKrinonRoute) URL() *url.URL {
 
 func (r ConfiguredKrinonRoute) Scopes() []string {
 	return r.scopes
+}
+
+func (r ConfiguredKrinonRoute) RootPath() []string {
+	return r.rootPath
 }
 
 func NewConfigurableKrinonRouter(pathToModuleMap map[string]string) (krinon.KrinonRouter, error) {
@@ -56,10 +61,12 @@ func (r ConfigurableKrinonRouter) Route(path string) (krinon.KrinonRoute, error)
 	}
 	for prefix, rootURL := range r.pathToModuleMap {
 		if prefixMatch(prefix, path) {
-			uncleanedScopes := strings.Split(prefix, "/")
+			uncleanedRootPath := strings.Split(prefix, "/")
+			claenedRootPath := uncleanedRootPath[1 : len(uncleanedRootPath)-1]
 			return ConfiguredKrinonRoute{
-				uRL:    rootURL,
-				scopes: uncleanedScopes[1 : len(uncleanedScopes)-1],
+				uRL:      rootURL,
+				scopes:   claenedRootPath,
+				rootPath: claenedRootPath,
 			}, nil
 		}
 	}

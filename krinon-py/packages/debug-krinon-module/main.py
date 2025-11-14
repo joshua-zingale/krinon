@@ -1,4 +1,5 @@
-from fastapi import FastAPI, Request
+import typing as t
+from fastapi import FastAPI, Request, Header
 from fastapi.responses import HTMLResponse
 
 import requests
@@ -8,7 +9,7 @@ import krinon_models as s
 app = FastAPI()
 
 @app.get("/{full_path:path}")
-def home(request: Request) -> HTMLResponse:
+def home(request: Request, krinon_headers: t.Annotated[s.KrinonHeaders, Header()]) -> HTMLResponse:
     public_key = requests.get(f"http://{request.headers.get("x-forwarded-host", "127.0.0.1")}/.well-known/krinon-public-key").text
 
     krinon_jwt = request.headers.get("x-krinon-jwt")
@@ -27,4 +28,6 @@ def home(request: Request) -> HTMLResponse:
         f"<p>The module sees that the request is for '{request.url}'."
          + (f"<br>Authenticated as '{auth_info.user_id}'" if auth_info and auth_info.user_id else "<br>Unauthenticated.")
          + (f"<br>In scope '{auth_info.scope_ids}'</p>" if auth_info and auth_info.scope_ids else "<br>Not in any scope.</p>")
-         + (f"<br><br>auth_info: {auth_info}"))
+         + (f"<br><br>auth_info: {auth_info}")
+         + (f"<br><p>krinon_headers: {krinon_headers}</p>")
+         + (f"<br><p>Headers: {request.headers}</p>"))

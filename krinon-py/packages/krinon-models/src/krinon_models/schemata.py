@@ -4,6 +4,7 @@ import jwt
 
 class KrinonHeaders(BaseModel):
     x_krinon_jwt: str
+    x_krinon_root_path: str
 
 
 class Audience(t.TypedDict):

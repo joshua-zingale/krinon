@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt"
@@ -23,6 +24,7 @@ var KRINON_SESSION_COOKIE_NAME = "krinon_session"
 type KrinonRoute interface {
 	URL() *url.URL
 	Scopes() []string
+	RootPath() []string
 }
 
 type KrinonRouter interface {
@@ -223,6 +225,7 @@ func httpProxy(w http.ResponseWriter, r *http.Request, privateKey *rsa.PrivateKe
 			pr.SetURL(route.URL())
 			pr.SetXForwarded()
 			pr.Out.Header.Add("X-Krinon-JWT", signedJwt)
+			pr.Out.Header.Add("X-Krinon-Root-Path", "/"+strings.Join(route.RootPath(), "/"))
 		},
 	}
 	reverseProxy.ServeHTTP(w, r)
