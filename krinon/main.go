@@ -29,10 +29,10 @@ func main() {
 	server := http.Server{
 		Addr: address,
 		Handler: krinon.NewKrinonMux(&krinon.KrinonMuxOptions{
-			Router:     router,
-			PublicKey:  args.PublicKey,
-			PrivateKey: args.PrivateKey,
-			Secret:     args.Secret,
+			Router:          router,
+			JwtPublicKey:    args.JwtPublicKey,
+			JwtPrivateKey:   args.JwtPrivateKey,
+			SymmetricSecret: args.SymmetricSecret,
 			OAuthConfig: &oauth2.Config{
 				ClientID:     args.OAuthClientId,
 				ClientSecret: args.OAuthClientSecret,

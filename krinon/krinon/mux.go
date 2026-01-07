@@ -20,6 +20,8 @@ import (
 
 const KRINON_SESSION_COOKIE_NAME = "krinon_session"
 const KRINON_OAUTH_STATE_COOKIE = "krinon_oauth2_state"
+const NEXT_URL_COOKIE = "next_url"
+const NEXT_URL_QUERY = "next"
 
 type KrinonRoute interface {
 	URL() url.URL
@@ -35,7 +37,7 @@ type KrinonRouter interface {
 func NewKrinonMux(opts *KrinonMuxOptions) *http.ServeMux {
 	mux := http.NewServeMux()
 
-	privateKey, err := parseRSAPrivateKey(opts.PrivateKey)
+	jwtPrivateKey, err := parseRSAPrivateKey(opts.JwtPrivateKey)
 	if err != nil {
 		return nil
 	}
@@ -46,31 +48,24 @@ func NewKrinonMux(opts *KrinonMuxOptions) *http.ServeMux {
 	mux.HandleFunc("GET /logout", logout)
 
 	mux.HandleFunc("GET /oauth2/callback", func(w http.ResponseWriter, r *http.Request) {
-		oauth2Callback(w, r, opts.OAuthConfig, opts.Secret)
+		oauth2Callback(w, r, opts.OAuthConfig, opts.SymmetricSecret)
 	})
 
 	mux.HandleFunc("GET /.well-known/krinon-public-key", func(w http.ResponseWriter, r *http.Request) {
-		getKrinonPublicKey(w, r, opts.PublicKey)
+		getKrinonPublicKey(w, r, opts.JwtPublicKey)
 	})
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		httpProxy(w, r, privateKey, opts.Secret, opts.Router)
+		httpProxy(w, r, jwtPrivateKey, opts.SymmetricSecret, opts.Router)
 	})
 	return mux
 }
 
 func logout(w http.ResponseWriter, r *http.Request) {
-	http.SetCookie(w, &http.Cookie{
-		Name:    KRINON_SESSION_COOKIE_NAME,
-		Value:   "",
-		Path:    "/",
-		Expires: time.Unix(0, 0),
-
-		HttpOnly: true,
-	})
+	delCookie(w, KRINON_SESSION_COOKIE_NAME)
 
 	next_url := "/"
-	if next_url_query := r.URL.Query().Get("next"); next_url_query != "" {
+	if next_url_query := r.URL.Query().Get(NEXT_URL_QUERY); next_url_query != "" {
 		next_url = next_url_query
 	}
 
@@ -82,7 +77,7 @@ func login(w http.ResponseWriter, r *http.Request, oauthConfig *oauth2.Config) {
 	state := generateRandomState(32)
 	url := oauthConfig.AuthCodeURL(state)
 
-	next_url := r.URL.Query().Get("next")
+	next_url := r.URL.Query().Get(NEXT_URL_QUERY)
 	if next_url == "" {
 		next_url = "/"
 	}
@@ -95,7 +90,7 @@ func login(w http.ResponseWriter, r *http.Request, oauthConfig *oauth2.Config) {
 	})
 
 	http.SetCookie(w, &http.Cookie{
-		Name:   "next_url",
+		Name:   NEXT_URL_COOKIE,
 		Value:  next_url,
 		MaxAge: 600,
 	})
@@ -108,6 +103,7 @@ func oauth2Callback(w http.ResponseWriter, r *http.Request, oauthConfig *oauth2.
 	code := r.FormValue("code")
 
 	state_in_cookie, err := r.Cookie(KRINON_OAUTH_STATE_COOKIE)
+	delCookie(w, KRINON_OAUTH_STATE_COOKIE)
 	if err != nil || state_in_cookie.Value != received_state {
 		log.Println(err)
 		http.Error(w, "Invalid login attempt: corrupted state.", 400)
@@ -159,8 +155,9 @@ func oauth2Callback(w http.ResponseWriter, r *http.Request, oauthConfig *oauth2.
 	})
 
 	next_url := "/"
-	if next_url_cookie, err := r.Cookie("next_url"); err == nil {
+	if next_url_cookie, err := r.Cookie(NEXT_URL_COOKIE); err == nil {
 		next_url = next_url_cookie.Value
+		delCookie(w, NEXT_URL_COOKIE)
 	}
 
 	http.Redirect(w, r, next_url, http.StatusFound)
@@ -200,7 +197,8 @@ func httpProxy(w http.ResponseWriter, r *http.Request, privateKey *rsa.PrivateKe
 			"root_path": route.RootPath(),
 		})
 	} else {
-		token = jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{})
+		http.Redirect(w, r, fmt.Sprintf("/login?next=%s", r.URL.Path), http.StatusFound)
+		return
 	}
 
 	signedJwt, err := token.SignedString(privateKey)
@@ -236,11 +234,22 @@ func httpProxy(w http.ResponseWriter, r *http.Request, privateKey *rsa.PrivateKe
 }
 
 type KrinonMuxOptions struct {
-	PublicKey   []byte
-	PrivateKey  []byte
-	Secret      []byte
-	OAuthConfig *oauth2.Config
-	Router      KrinonRouter
+	JwtPublicKey    []byte
+	JwtPrivateKey   []byte
+	SymmetricSecret []byte
+	OAuthConfig     *oauth2.Config
+	Router          KrinonRouter
+}
+
+func delCookie(w http.ResponseWriter, cookieName string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:    cookieName,
+		Value:   "",
+		Path:    "/",
+		Expires: time.Unix(0, 0),
+
+		HttpOnly: true,
+	})
 }
 
 func parseRSAPrivateKey(key []byte) (*rsa.PrivateKey, error) {

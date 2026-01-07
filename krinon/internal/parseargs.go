@@ -54,9 +54,9 @@ func ParseArgs() (*ParsedArguments, error) {
 	return &ParsedArguments{
 		Host:              *host,
 		Port:              *port,
-		PublicKey:         publicKey,
-		PrivateKey:        privateKey,
-		Secret:            secret,
+		JwtPublicKey:      publicKey,
+		JwtPrivateKey:     privateKey,
+		SymmetricSecret:   secret,
 		OAuthClientId:     string(oauthClientId),
 		OAuthClientSecret: string(oauthClientSecret),
 	}, nil
@@ -66,9 +66,9 @@ func ParseArgs() (*ParsedArguments, error) {
 type ParsedArguments struct {
 	Host              string
 	Port              string
-	PublicKey         []byte
-	PrivateKey        []byte
-	Secret            []byte
+	JwtPublicKey      []byte
+	JwtPrivateKey     []byte
+	SymmetricSecret   []byte
 	OAuthClientId     string
 	OAuthClientSecret string
 }
