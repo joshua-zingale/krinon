@@ -19,7 +19,7 @@ func main() {
 	}
 
 	router, err := internal.NewConfigurableKrinonRouter(map[string]string{
-		"mod1": "http://localhost:5555/",
+		"mod1": "http://127.0.0.1:5555/",
 	})
 	if err != nil {
 		panic(err)

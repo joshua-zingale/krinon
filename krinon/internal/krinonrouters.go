@@ -9,16 +9,16 @@ import (
 )
 
 type ConfigurableKrinonRouter struct {
-	pathToModuleMap map[string]*url.URL
+	pathToModuleMap map[string]url.URL
 }
 
 type ConfiguredKrinonRoute struct {
-	uRL      *url.URL
+	uRL      url.URL
 	scopes   []string
 	rootPath []string
 }
 
-func (r ConfiguredKrinonRoute) URL() *url.URL {
+func (r ConfiguredKrinonRoute) URL() url.URL {
 	return r.uRL
 }
 
@@ -31,42 +31,38 @@ func (r ConfiguredKrinonRoute) RootPath() []string {
 }
 
 func NewConfigurableKrinonRouter(pathToModuleMap map[string]string) (krinon.KrinonRouter, error) {
-	pathToModuleMapURL := make(map[string]*url.URL)
+	pathToModuleMapURL := make(map[string]url.URL)
 
 	for key, value := range pathToModuleMap {
 		url, err := url.Parse(value)
 		if err != nil {
 			return nil, err
 		}
-		if !strings.HasPrefix(key, "/") {
-			key = "/" + key
-		}
-		if !strings.HasSuffix(key, "/") {
-			key += "/"
-		}
+		key = normalizePath(key)
 
-		pathToModuleMapURL[key] = url
+		pathToModuleMapURL[key] = *url
 	}
 	return ConfigurableKrinonRouter{
 		pathToModuleMap: pathToModuleMapURL,
 	}, nil
 }
 
+func normalizePath(path string) string {
+	return strings.TrimPrefix(strings.TrimPrefix(path, "/"), "/")
+}
+
 func (r ConfigurableKrinonRouter) Route(path string) (krinon.KrinonRoute, error) {
-	if !strings.HasPrefix(path, "/") {
-		path = "/" + path
-	}
-	if !strings.HasSuffix(path, "/") {
-		path = path + "/"
-	}
+	path = normalizePath(path)
 	for prefix, rootURL := range r.pathToModuleMap {
 		if prefixMatch(prefix, path) {
-			uncleanedRootPath := strings.Split(prefix, "/")
-			claenedRootPath := uncleanedRootPath[1 : len(uncleanedRootPath)-1]
+			prefix_list := strings.Split(prefix, "/")
+			path_list := strings.Split(path, "/")
+			rootURL.Path = "/" + strings.Join(strings.Split(path, "/")[len(prefix_list):], "/")
+
 			return ConfiguredKrinonRoute{
 				uRL:      rootURL,
-				scopes:   claenedRootPath,
-				rootPath: claenedRootPath,
+				scopes:   path_list,
+				rootPath: path_list,
 			}, nil
 		}
 	}

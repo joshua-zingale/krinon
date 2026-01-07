@@ -12,17 +12,17 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
-	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt"
 	"golang.org/x/oauth2"
 )
 
-var KRINON_SESSION_COOKIE_NAME = "krinon_session"
+const KRINON_SESSION_COOKIE_NAME = "krinon_session"
+const KRINON_OAUTH_STATE_COOKIE = "krinon_oauth2_state"
 
 type KrinonRoute interface {
-	URL() *url.URL
+	URL() url.URL
 	Scopes() []string
 	RootPath() []string
 }
@@ -88,7 +88,7 @@ func login(w http.ResponseWriter, r *http.Request, oauthConfig *oauth2.Config) {
 	}
 
 	http.SetCookie(w, &http.Cookie{
-		Name:     "krinon_oauth2_state",
+		Name:     KRINON_OAUTH_STATE_COOKIE,
 		Value:    state,
 		MaxAge:   600,
 		HttpOnly: true,
@@ -107,16 +107,17 @@ func oauth2Callback(w http.ResponseWriter, r *http.Request, oauthConfig *oauth2.
 	received_state := r.FormValue("state")
 	code := r.FormValue("code")
 
-	state_in_cookie, err := r.Cookie("krinon_oauth2_state")
+	state_in_cookie, err := r.Cookie(KRINON_OAUTH_STATE_COOKIE)
 	if err != nil || state_in_cookie.Value != received_state {
-		http.Error(w, "Invalid login attempt.", 400)
+		log.Println(err)
+		http.Error(w, "Invalid login attempt: corrupted state.", 400)
 		return
 	}
 
 	tok, err := oauthConfig.Exchange(r.Context(), code)
 	if err != nil {
 		log.Printf("%s", err)
-		http.Error(w, "Invalid login attempt.", 400)
+		http.Error(w, "Invalid login attempt: invalid authorization code.", 400)
 		return
 	}
 
@@ -196,6 +197,7 @@ func httpProxy(w http.ResponseWriter, r *http.Request, privateKey *rsa.PrivateKe
 			"user_id":   claims["email"],
 			"scope_ids": route.Scopes(),
 			"aud":       route.URL().Host + r.URL.Path,
+			"root_path": route.RootPath(),
 		})
 	} else {
 		token = jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{})
@@ -222,10 +224,12 @@ func httpProxy(w http.ResponseWriter, r *http.Request, privateKey *rsa.PrivateKe
 				pr.Out.AddCookie(cookie)
 			}
 
-			pr.SetURL(route.URL())
+			targetUrl := route.URL()
+			pr.SetURL(&targetUrl)
 			pr.SetXForwarded()
+			pr.Out.URL = &targetUrl
 			pr.Out.Header.Add("X-Krinon-JWT", signedJwt)
-			pr.Out.Header.Add("X-Krinon-Root-Path", "/"+strings.Join(route.RootPath(), "/"))
+
 		},
 	}
 	reverseProxy.ServeHTTP(w, r)

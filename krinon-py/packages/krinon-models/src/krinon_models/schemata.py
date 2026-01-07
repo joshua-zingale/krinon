@@ -4,7 +4,6 @@ import jwt
 
 class KrinonHeaders(BaseModel):
     x_krinon_jwt: str
-    x_krinon_root_path: str
 
 
 class Audience(t.TypedDict):
@@ -21,7 +20,7 @@ class _JwtEncodableModel(BaseModel):
         port = audiance.get("port") or 80
         path = audiance["path"]
         return cls(
-            **jwt.decode(token, public_key, algorithms="RS256", audience=f"{host}:{port}{path}"),
+            **jwt.decode(token, public_key, algorithms="RS256", audience=[f"{host}:{port}{path}"], options={"verify_aud": False}),
         )
     
     def to_jwt(self, private_key: bytes | str) -> str:
@@ -31,9 +30,11 @@ class KrinonJWT(_JwtEncodableModel):
     user_id: t.Optional[str] = None
     """The ID of the authenticated user."""
     scope_ids: t.Optional[list[str]] = None
-    """The ancestory of the scope in which a request was made.
+    """The ancestry of the scope in which a request was made.
     The first scope_id is the first parent and the last scope_id is the
     scope in which the request was made."""
+    root_path: t.Optional[list[str]] = None
+    """The root path for the URL of the service receiving this JWT."""
 
     
 class KrinonPublicKeyResponse(BaseModel):
